@@ -7,6 +7,21 @@ This project enables multidimensional integration in C++ using the
 implementation is located in `cubature.hpp` and a sample of usage is
 provided together with integration into the CMake build system.
 
+# Building
+
+To build the example, follow the standard CMake workflow
+```
+$ mkdir build
+$ cd build
+$ cmake -DCMAKE_BUILD_TYPE=Release ..
+$ make -j 16
+```
+The CMake option `-DCMAKE_BUILD_TYPE=Release` enables compiler
+optimizations and removes the debug flags from the generated
+executable to make it run faster.  The Make option `-j 16` tells Make
+to use 16 threads for compilation (my machine has 8 cores with
+hyperthreading = 16 threads).
+
 # Documentation
 
 **Note:** Currently the integration is limited to [-∞,∞] in all
