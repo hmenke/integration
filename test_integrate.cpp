@@ -43,4 +43,11 @@ int main() {
         std::cout << "Exact           = " << exact << '\n'
                   << "Actual error    = " << std::abs(std::get<0>(result)-exact) << '\n';
     }
+
+    constexpr std::complex<double> const I(0,1);
+    auto complex_func = [&I] (double x, double y) { return (std::cos(x) + I*std::sin(y)) * std::exp(-x*x) *std::exp(-y*y); };
+    auto result = cubature::integrate_i<true>(complex_func);
+    std::cout << "Result          = " << std::get<0>(result) << '\n'
+              << "Numerical error = " << std::get<1>(result) << '\n';
+
 }
