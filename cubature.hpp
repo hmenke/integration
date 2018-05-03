@@ -215,7 +215,12 @@ public:
 
 // public integrate function
 
-template < bool vectorize = false,
+#ifndef CUBATURE_VECTORIZE_DEFAULT
+#define CUBATURE_VECTORIZE_DEFAULT false
+#endif
+
+template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT,
+           int&... ExplicitArgumentBarrier,
            typename F,
            unsigned dim = detail::argument_count<F>::value,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
@@ -228,7 +233,8 @@ integrate(F func,
     return detail::cubature_impl<vectorize,F,dim>(func).integrate(min, max, epsabs, epsrel, limit);
 }
 
-template < bool vectorize = false,
+template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT,
+           int&... ExplicitArgumentBarrier,
            typename F,
            unsigned dim = detail::argument_count<F>::value,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
