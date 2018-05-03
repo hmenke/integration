@@ -16,7 +16,7 @@ int main() {
         auto start = std::chrono::high_resolution_clock::now();
 
         // non-vectorized
-        cubature::integrate_i<false>(func);
+        cubature::integrate<false>(func,{-INFINITY,-INFINITY},{+INFINITY,+INFINITY});
 
         auto stop = std::chrono::high_resolution_clock::now();
         std::cout << "Time (non-vectorized): " << std::chrono::duration<double>{stop - start}.count() << " sec\n";
@@ -25,7 +25,7 @@ int main() {
         auto start = std::chrono::high_resolution_clock::now();
 
         // vectorized
-        cubature::integrate_i<true>(func);
+        cubature::integrate<true>(func,{-INFINITY,-INFINITY},{+INFINITY,+INFINITY});
 
         auto stop = std::chrono::high_resolution_clock::now();
         std::cout << "Time (vectorized)    : " << std::chrono::duration<double>{stop - start}.count() << " sec\n";
@@ -33,7 +33,7 @@ int main() {
 
     // Accuracy
     {
-        auto result = cubature::integrate_i<true>(func);
+        auto result = cubature::integrate<true>(func,{-INFINITY,-INFINITY},{+INFINITY,+INFINITY});
 
         double exact = M_PI/std::sqrt(a*b);
     
@@ -41,13 +41,24 @@ int main() {
         std::cout << "Result          = " << std::get<0>(result) << '\n'
                   << "Numerical error = " << std::get<1>(result) << '\n';
         std::cout << "Exact           = " << exact << '\n'
-                  << "Actual error    = " << std::abs(std::get<0>(result)-exact) << '\n';
+                  << "Actual error    = " << std::get<0>(result)-exact << '\n';
     }
 
-    constexpr std::complex<double> const I(0,1);
-    auto complex_func = [&I] (double x, double y) { return (std::cos(x) + I*std::sin(y)) * std::exp(-x*x) *std::exp(-y*y); };
-    auto result = cubature::integrate_i<true>(complex_func);
-    std::cout << "Result          = " << std::get<0>(result) << '\n'
-              << "Numerical error = " << std::get<1>(result) << '\n';
+    // Complex integrand
+    {
+        constexpr std::complex<double> const I(0,1);
+
+        auto complex_func = [&I] (double x, double y, double kx, double ky) {
+            return (std::cos(kx/2) + I*std::sin(ky/2)) * std::exp(-x*x) *std::exp(-y*y);
+        };
+        auto result = cubature::integrate<true>(complex_func,{-INFINITY,-INFINITY,0,0},{+INFINITY,+INFINITY,2*M_PI,2*M_PI});
+
+        std::complex<double> exact = 8.0 * I * M_PI*M_PI;
+
+        std::cout << "Result          = " << std::get<0>(result) << '\n'
+                  << "Numerical error = " << std::get<1>(result) << '\n';
+        std::cout << "Exact           = " << exact << '\n'
+                  << "Actual error    = " << std::get<0>(result)-exact << '\n';
+    }
 
 }

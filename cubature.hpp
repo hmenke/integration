@@ -79,7 +79,6 @@ function_composition<F,G> make_function_composition(F f, G g) {
     return function_composition<F,G>(f,g);
 }
 
-
 // index_sequence
 
 template <size_t ...I>
@@ -98,26 +97,48 @@ class cubature_impl
 {
     using integrand_t = typename std::conditional<vectorize,integrand_v,integrand>::type;
 
+    enum limits {
+        INFINITE,
+        HALF_INF_LOWER,
+        HALF_INF_UPPER,
+        FINITE
+    };
+
+    std::array<limits,m_dim> isfinite;
     F m_f;
 
     template < std::size_t... I >
     static int cubature_wrapper_detail(unsigned /* ndim */, size_t npts, const double *x, void *fdata,
                                        unsigned /* fdim */, double *fval, index_sequence<I...>) {
-        cubature_impl * t = static_cast<cubature_impl*>(fdata);
+        cubature_impl * p = static_cast<cubature_impl*>(fdata);
 
-        #pragma omp parallel for
-        for (size_t j = 0; j < npts; ++j) { // evaluate the integrand for npts points
-            double dt = 1;
+        // evaluate the integrand for npts points
+        #pragma omp parallel for if(npts > 1)
+        for (size_t j = 0; j < npts; ++j) {
+            double t[m_dim] = { 0 };  // initializer is needed to make compiler happy
+            double dt = 1.0;
 
-            // "expander trick"
-            using expander = int[];
-            (void) expander { 0, ( (void) (
-                                       dt *= (1+x[j*m_dim+I]*x[j*m_dim+I])
-                                       /
-                                       ((1-x[j*m_dim+I]*x[j*m_dim+I])*(1-x[j*m_dim+I]*x[j*m_dim+I]))
-                                       ),0) ... };
+            for (size_t i = 0; i < m_dim; ++i) {
+                switch (p->isfinite[i]) {
+                case FINITE:
+                    t[i] = x[j*m_dim+i];
+                    break;
+                case HALF_INF_LOWER:
+                    // To be implemented
+                    break;
+                case HALF_INF_UPPER:
+                    // To be implemented
+                    break;
+                case INFINITE:
+                    t[i] = x[j*m_dim+i]/(1-x[j*m_dim+i]*x[j*m_dim+i]);
+                    dt *= (1+x[j*m_dim+i]*x[j*m_dim+i])
+                        /
+                        ((1-x[j*m_dim+i]*x[j*m_dim+i])*(1-x[j*m_dim+i]*x[j*m_dim+i]));
+                    break;
+                }
+            }
 
-            fval[j] = t->m_f((x[j*m_dim+I]/(1-x[j*m_dim+I]*x[j*m_dim+I]))...) * dt;
+            fval[j] = p->m_f(t[I]...) * dt;
         }
 
         return 0; // success
@@ -136,7 +157,7 @@ class cubature_impl
     }
 
 public:
-    cubature_impl(F f) : m_f{f} {}
+    cubature_impl(F f) : isfinite{}, m_f{f} {}
 
     template < bool enable = !vectorize >
     typename std::enable_if< enable, int >::type
@@ -157,11 +178,22 @@ public:
     }
 
     std::tuple<double,double>
-    integrate(double epsabs, double epsrel, unsigned limit) {
+    integrate(std::array<double,m_dim> min,
+              std::array<double,m_dim> max,
+              double epsabs, double epsrel, unsigned limit) {
         integrand_t Fint = &cubature_wrapper;
 
-        std::array<double,m_dim> min; min.fill(-1);
-        std::array<double,m_dim> max; max.fill(+1);
+        for (size_t i = 0; i < m_dim; ++i) {
+            if (std::isinf(min[i]) && std::isinf(max[i])) {
+                min[i] = -1;
+                max[i] = +1;
+                isfinite[i] = INFINITE;
+            } else if (std::isinf(min[i]) || std::isinf(max[i])) {
+                throw std::runtime_error("Half-infinite intervals are not yet supported!");
+            } else {
+                isfinite[i] = FINITE;
+            }
+        }
         
         double result, error;
 
@@ -189,10 +221,11 @@ template < bool vectorize = false,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
            >
 typename std::enable_if<std::is_floating_point<return_t>::value,std::tuple<double,double>>::type
-integrate_i(F func,
-            double epsabs = 1.49e-8, double epsrel = 1.49e-8,
-            unsigned limit = 0) {
-    return detail::cubature_impl<vectorize,F,dim>(func).integrate(epsabs, epsrel, limit);
+integrate(F func,
+          std::array<double,dim> const &min, std::array<double,dim> const &max,
+          double epsabs = 1.49e-8, double epsrel = 1.49e-8,
+          unsigned limit = 0) {
+    return detail::cubature_impl<vectorize,F,dim>(func).integrate(min, max, epsabs, epsrel, limit);
 }
 
 template < bool vectorize = false,
@@ -201,15 +234,16 @@ template < bool vectorize = false,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
            >
 typename std::enable_if<detail::is_complex<return_t>::value,std::tuple<std::complex<double>,std::complex<double>>>::type
-integrate_i(F func,
-            double epsabs = 1.49e-8, double epsrel = 1.49e-8,
-            unsigned limit = 0) {
+integrate(F func,
+          std::array<double,dim> const &min, std::array<double,dim> const &max,
+          double epsabs = 1.49e-8, double epsrel = 1.49e-8,
+          unsigned limit = 0) {
     constexpr std::complex<double> const I(0,1);
     using T = typename detail::is_complex<return_t>::value_type;
     auto real_part = detail::make_function_composition(static_cast<T(*)(std::complex<T> const &)>(std::real),func);
     auto imag_part = detail::make_function_composition(static_cast<T(*)(std::complex<T> const &)>(std::imag),func);
-    auto real_res = detail::cubature_impl<vectorize,decltype(real_part),dim>(real_part).integrate(epsabs, epsrel, limit);
-    auto imag_res = detail::cubature_impl<vectorize,decltype(imag_part),dim>(imag_part).integrate(epsabs, epsrel, limit);
+    auto real_res = detail::cubature_impl<vectorize,decltype(real_part),dim>(real_part).integrate(min, max, epsabs, epsrel, limit);
+    auto imag_res = detail::cubature_impl<vectorize,decltype(imag_part),dim>(imag_part).integrate(min, max, epsabs, epsrel, limit);
     return std::make_tuple(std::get<0>(real_res) + I*std::get<0>(imag_res), std::get<1>(real_res) + I*std::get<1>(imag_res));
 }
 
