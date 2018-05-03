@@ -66,7 +66,7 @@ struct function_composition {
     F f;
     G g;
 
-    function_composition(F f, G g) : f(f), g(g) {}
+    function_composition(F &&f, G &&g) : f(f), g(g) {}
 
     template < typename ... Args >
     auto operator()(Args ... args) -> decltype(f(g(std::declval<Args>()...))) const {
@@ -75,8 +75,8 @@ struct function_composition {
 };
 
 template < typename F, typename G >
-function_composition<F,G> make_function_composition(F f, G g) {
-    return function_composition<F,G>(f,g);
+function_composition<F,G> compose(F &&f, G &&g) {
+    return function_composition<F,G>(std::forward<F>(f),std::forward<G>(g));
 }
 
 // index_sequence
@@ -246,8 +246,8 @@ integrate(F func,
           unsigned limit = 0) {
     constexpr std::complex<double> const I(0,1);
     using T = typename detail::is_complex<return_t>::value_type;
-    auto real_part = detail::make_function_composition(static_cast<T(*)(std::complex<T> const &)>(std::real),func);
-    auto imag_part = detail::make_function_composition(static_cast<T(*)(std::complex<T> const &)>(std::imag),func);
+    auto real_part = detail::compose(static_cast<T(*)(std::complex<T> const &)>(std::real),func);
+    auto imag_part = detail::compose(static_cast<T(*)(std::complex<T> const &)>(std::imag),func);
     auto real_res = detail::cubature_impl<vectorize,decltype(real_part),dim>(real_part).integrate(min, max, epsabs, epsrel, limit);
     auto imag_res = detail::cubature_impl<vectorize,decltype(imag_part),dim>(imag_part).integrate(min, max, epsabs, epsrel, limit);
     return std::make_tuple(std::get<0>(real_res) + I*std::get<0>(imag_res), std::get<1>(real_res) + I*std::get<1>(imag_res));
