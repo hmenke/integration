@@ -119,9 +119,12 @@ class cubature_impl
             double dt = 1.0;
 
             for (size_t i = 0; i < m_dim; ++i) {
+                // Cache x to avoid multiple indirection
+                double const x1 = x[j*m_dim+i];
+
                 switch (p->isfinite[i]) {
                 case FINITE:
-                    t[i] = x[j*m_dim+i];
+                    t[i] = x1;
                     break;
                 case HALF_INF_LOWER:
                     // To be implemented
@@ -130,10 +133,9 @@ class cubature_impl
                     // To be implemented
                     break;
                 case INFINITE:
-                    t[i] = x[j*m_dim+i]/(1-x[j*m_dim+i]*x[j*m_dim+i]);
-                    dt *= (1+x[j*m_dim+i]*x[j*m_dim+i])
-                        /
-                        ((1-x[j*m_dim+i]*x[j*m_dim+i])*(1-x[j*m_dim+i]*x[j*m_dim+i]));
+                    double const x2 = x1*x1; // precompute square
+                    t[i] = x1/(1-x2);
+                    dt *= (1+x2)/((1-x2)*(1-x2));
                     break;
                 }
             }
