@@ -24,17 +24,18 @@ hyperthreading = 16 threads).
 
 # Documentation
 
-**Note:** Currently the integration is limited to [-∞,∞] in all
-dimensions.  No other limits are possible at the moment.  (That's
-also why the function is called `integrate_i`, with `i` for infinity)
+**Note:** Currently the integration is limited to [a,b] where a and b
+are finite or [-∞,∞] in all dimensions.  No other limits are possible
+at the moment.
 
 The function signature of the public `integrate_i` function is
 ```cpp
-template < bool vectorize = false, typename F, unsigned dim = detail::argument_count<F>::value >
-std::tuple<double,double>
-integrate_i(F func,
-            double epsabs = 1.49e-8, double epsrel = 1.49e-8,
-            unsigned limit = 0)
+template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT >
+/* return type determined from function */
+integrate(F func,
+          std::array<double,dim> const &min, std::array<double,dim> const &max,
+          double epsabs = 1.49e-8, double epsrel = 1.49e-8,
+          unsigned limit = 0)
 ```
 The first template parameter `vectorize` determines whether to use
 OpenMP for parallel evaluation of the function and possibly much
