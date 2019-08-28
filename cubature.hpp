@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <cubature/cubature.h>
 
@@ -51,15 +52,7 @@ struct return_of<R(Args...)> { typedef R type; };
 template <typename R, typename... Args>
 struct return_of<R(*)(Args...)> { typedef R type; };
 
-// is_complex
-
-template < typename T >
-struct is_complex : std::false_type {};
-
-template < typename T >
-struct is_complex<std::complex<T>> : std::true_type { typedef T value_type; };
-
-// real_imag
+// function_composition
 
 template < typename F, typename G >
 struct function_composition {
@@ -109,7 +102,7 @@ class cubature_impl
 
     template < std::size_t... I >
     static int cubature_wrapper_detail(unsigned /* ndim */, size_t npts, const double *x, void *fdata,
-                                       unsigned /* fdim */, double *fval, index_sequence<I...>) {
+                                       unsigned fdim, double *fval, index_sequence<I...>) {
         cubature_impl * p = static_cast<cubature_impl*>(fdata);
 
         // evaluate the integrand for npts points
@@ -140,7 +133,10 @@ class cubature_impl
                 }
             }
 
-            fval[j] = p->m_f(t[I]...) * dt;
+            std::vector<double> r = p->m_f(t[I]...);
+            for (size_t k = 0; k < fdim; ++k) {
+                fval[j*fdim + k] = r[k] * dt;
+            }
         }
 
         return 0; // success
@@ -179,8 +175,9 @@ public:
         return hcubature_v(fdim,f,fdata,dim,xmin,xmax,maxEval,reqAbsError,reqRelError,norm,val,err);
     }
 
-    std::tuple<double,double>
-    integrate(std::array<double,m_dim> min,
+    std::tuple<std::vector<double>, std::vector<double>>
+    integrate(unsigned fdim,
+              std::array<double,m_dim> min,
               std::array<double,m_dim> max,
               double epsabs, double epsrel, unsigned limit) {
         integrand_t Fint = &cubature_wrapper;
@@ -197,13 +194,13 @@ public:
             }
         }
         
-        double result, error;
+        std::vector<double> result(fdim), error(fdim);
 
         int status = hcubature_dispatch(
-            /* fdim */ 1, /* integrand */ Fint, /* fdata */ this,
+            /* fdim */ fdim, /* integrand */ Fint, /* fdata */ this,
             /* dim */ m_dim, /* xmin */ min.data(), /* xmax */ max.data(),
             /* maxEval */ limit, /* reqAbsError */ epsabs, /* reqRelError */ epsrel,
-            /* error_norm */ ERROR_INDIVIDUAL, /* val */ &result, /* err */ &error);
+            /* error_norm */ ERROR_INDIVIDUAL, /* val */ result.data(), /* err */ error.data());
 
         if ( status != 0 ) {
             throw std::runtime_error("Error during integration!");
@@ -227,12 +224,14 @@ template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT,
            unsigned dim = detail::argument_count<F>::value,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
            >
-typename std::enable_if<std::is_floating_point<return_t>::value,std::tuple<double,double>>::type
-integrate(F func,
+typename std::enable_if<std::is_same<return_t,std::vector<double>>::value,
+        std::tuple<std::vector<double>,std::vector<double>>
+         >::type
+integrate(F func, unsigned fdim,
           std::array<double,dim> const &min, std::array<double,dim> const &max,
           double epsabs = 1.49e-8, double epsrel = 1.49e-8,
           unsigned limit = 0) {
-    return detail::cubature_impl<vectorize,F,dim>(func).integrate(min, max, epsabs, epsrel, limit);
+    return detail::cubature_impl<vectorize,F,dim>(func).integrate(fdim, min, max, epsabs, epsrel, limit);
 }
 
 template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT,
@@ -241,18 +240,16 @@ template < bool vectorize = CUBATURE_VECTORIZE_DEFAULT,
            unsigned dim = detail::argument_count<F>::value,
            typename return_t = typename std::decay<typename detail::return_of<F>::type>::type
            >
-typename std::enable_if<detail::is_complex<return_t>::value,std::tuple<std::complex<double>,std::complex<double>>>::type
+typename std::enable_if<std::is_same<return_t,double>::value,
+        std::tuple<double,double>
+         >::type
 integrate(F func,
           std::array<double,dim> const &min, std::array<double,dim> const &max,
           double epsabs = 1.49e-8, double epsrel = 1.49e-8,
           unsigned limit = 0) {
-    constexpr std::complex<double> const I(0,1);
-    using T = typename detail::is_complex<return_t>::value_type;
-    auto real_part = detail::compose(static_cast<T(*)(std::complex<T> const &)>(std::real),func);
-    auto imag_part = detail::compose(static_cast<T(*)(std::complex<T> const &)>(std::imag),func);
-    auto real_res = detail::cubature_impl<vectorize,decltype(real_part),dim>(real_part).integrate(min, max, epsabs, epsrel, limit);
-    auto imag_res = detail::cubature_impl<vectorize,decltype(imag_part),dim>(imag_part).integrate(min, max, epsabs, epsrel, limit);
-    return std::make_tuple(std::get<0>(real_res) + I*std::get<0>(imag_res), std::get<1>(real_res) + I*std::get<1>(imag_res));
+    auto f = detail::compose([](double x) { return std::vector<double>{x}; },func);
+    auto r = detail::cubature_impl<vectorize,decltype(f),dim>(f).integrate(1, min, max, epsabs, epsrel, limit);
+    return std::make_tuple(std::get<0>(r)[0], std::get<1>(r)[0]);
 }
 
 } // namespace cubature

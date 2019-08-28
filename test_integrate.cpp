@@ -49,16 +49,19 @@ int main() {
         constexpr std::complex<double> const I(0,1);
 
         auto complex_func = [&I] (double x, double y, double kx, double ky) {
-            return (std::cos(kx/2) + I*std::sin(ky/2)) * std::exp(-x*x) *std::exp(-y*y);
+            auto value = (std::cos(kx/2) + I*std::sin(ky/2)) * std::exp(-x*x) *std::exp(-y*y);
+            return std::vector<double>{std::real(value), std::imag(value)};
         };
-        auto result = cubature::integrate<true>(complex_func,{-INFINITY,-INFINITY,0,0},{+INFINITY,+INFINITY,2*M_PI,2*M_PI});
+        auto result = cubature::integrate<true>(complex_func, 2, {-INFINITY,-INFINITY,0,0},{+INFINITY,+INFINITY,2*M_PI,2*M_PI});
 
         std::complex<double> exact = 8.0 * I * M_PI*M_PI;
 
-        std::cout << "Result          = " << std::get<0>(result) << '\n'
-                  << "Numerical error = " << std::get<1>(result) << '\n';
+        std::complex<double> complex_result{std::get<0>(result)[0], std::get<0>(result)[1]};
+        std::complex<double> complex_error{std::get<1>(result)[0], std::get<1>(result)[1]};
+        std::cout << "Result          = " << complex_result << '\n'
+                  << "Numerical error = " << complex_error << '\n';
         std::cout << "Exact           = " << exact << '\n'
-                  << "Actual error    = " << std::get<0>(result)-exact << '\n';
+                  << "Actual error    = " << complex_result-exact << '\n';
     }
 
 }
